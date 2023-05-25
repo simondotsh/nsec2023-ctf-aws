@@ -1,0 +1,871 @@
+# Useful links:
+# https://aws.permissions.cloud/
+# https://theburningmonk.com/cloudformation-ref-and-getatt-cheatsheet/
+
+Parameters:
+  ProvisioningUrl:
+    Type: String
+    Description: Enter the URL where to download the zip file and post credentials (e.g. http://44.209.164.138)
+
+Resources:
+
+######################################
+############# NETWORKING #############
+######################################
+  
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc.html#aws-resource-ec2-vpc--examples
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 172.16.0.0/24
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-internetgateway.html
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc-gateway-attachment.html#aws-resource-ec2-vpc-gateway-attachment--examples
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-routetable.html
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-route.html
+  Route:
+    Type: AWS::EC2::Route
+    # Avoid bug: https://github.com/weaveworks/eksctl/issues/2047
+    DependsOn:
+      - InternetGatewayAttachment
+    Properties:
+       RouteTableId: !Ref RouteTable
+       DestinationCidrBlock: 0.0.0.0/0
+       GatewayId: !Ref InternetGateway
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet.html#aws-resource-ec2-subnet--examples
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 172.16.0.0/24
+      AvailabilityZone: us-east-1a
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnetroutetableassociation.html
+  SubnetRouteTableAssocation:
+    DependsOn:
+      - Route
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref Subnet
+
+ # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html#aws-properties-ec2-security-group--examples
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic to client host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 56987
+          ToPort: 56987
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 1990
+          ToPort: 1990
+          CidrIp: 0.0.0.0/0
+
+######################################
+############# DATABASES ##############
+######################################
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html
+  DynamoEmployeeLogin:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: GOD_LoginEmployee
+      AttributeDefinitions:
+        - AttributeName: EmployeeId
+          AttributeType: S
+        - AttributeName: Password
+          AttributeType: S
+      KeySchema:
+        - AttributeName: EmployeeId
+          KeyType: HASH
+        - AttributeName: Password
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html
+  DynamoManagerLogin:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: GOD_LoginManager
+      AttributeDefinitions:
+        - AttributeName: EmployeeId
+          AttributeType: S
+        - AttributeName: Password
+          AttributeType: S
+      KeySchema:
+        - AttributeName: EmployeeId
+          KeyType: HASH
+        - AttributeName: Password
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html
+  DynamoReview:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: GOD_ReviewEmployee
+      AttributeDefinitions:
+        - AttributeName: EmployeeId
+          AttributeType: S
+        - AttributeName: Review
+          AttributeType: N
+        - AttributeName: Comment
+          AttributeType: S
+      KeySchema:
+        - AttributeName: EmployeeId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      GlobalSecondaryIndexes:
+        - IndexName: "secondaryIndex"
+          KeySchema: 
+            - AttributeName: "Comment"
+              KeyType: "HASH"
+            - AttributeName: Review
+              KeyType: RANGE
+          Projection: 
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+
+######################################
+############# S3 Bucket ##############
+######################################
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket.html#aws-properties-s3-bucket--examples
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-publicaccessblockconfiguration.html
+  GODS3CorporationBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      AccessControl: Private
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: BucketOwnerPreferred
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: False
+        BlockPublicPolicy: False
+        IgnorePublicAcls: False
+        RestrictPublicBuckets: False
+
+######################################
+############# IAM ####################
+######################################
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-iam-user.html
+  DynamoReaderUser:
+    Type: 'AWS::IAM::User'
+    Properties:
+      UserName: GOD_DynamoReader
+      Policies:
+        - PolicyName: GOD_DynamoReader
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:Scan"
+                  - "dynamodb:Get*"
+                  - "dynamodb:Query"
+                Resource: 
+                  - !GetAtt DynamoEmployeeLogin.Arn
+                  - !GetAtt DynamoReview.Arn
+              - Effect: Allow
+                Action:
+                  - "dynamodb:ListTables"
+                Resource: "*"
+ 
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-iam-user.html
+  DynamoManagerUser:
+    Type: 'AWS::IAM::User'
+    Properties:
+      UserName: GOD_DynamoManager
+      Policies:
+        - PolicyName: GOD_DynamoManager
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:Scan"
+                  - "dynamodb:Get*"
+                  - "dynamodb:Query"
+                Resource: 
+                  - !GetAtt DynamoManagerLogin.Arn
+                  - !GetAtt DynamoReview.Arn
+              - Effect: Allow
+                Action:
+                  - "dynamodb:UpdateItem"
+                Resource: 
+                  - !GetAtt DynamoReview.Arn
+              - Effect: Allow
+                Action:
+                  - "dynamodb:ListTables"
+                Resource: "*"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-iam-accesskey.html
+  DynamoReaderKey:
+    Type: 'AWS::IAM::AccessKey'
+    Properties:
+      UserName: !Ref DynamoReaderUser
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-iam-accesskey.html
+  DynamoManagerKey:
+    Type: 'AWS::IAM::AccessKey'
+    Properties:
+      UserName: !Ref DynamoManagerUser
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-iam-user.html
+  ServiceAccountUser:
+    Type: 'AWS::IAM::User'
+    Properties:
+      UserName: GOD_svc_iam
+      Policies:
+        - PolicyName: GOD_IAM_Management
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "iam:ListRoles"
+                  - "iam:ListPolicies"
+                  - "iam:ListPolicyVersion"
+                  - "iam:ListRolePolicies"
+                  - "iam:ListAttachedRolePolicies"
+                  - "iam:ListAttachedUserPolicies"
+                  - "iam:ListAttachedGroupPolicies"
+                  - "iam:GetPolicy"
+                  - "iam:GetPolicyVersion"
+                  - "iam:GetRolePolicy"
+                  - "iam:GetUserPolicy"
+                Resource: "*"
+  
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-iam-accesskey.html
+  ServiceAccountKey:
+    Type: 'AWS::IAM::AccessKey'
+    Properties:
+      UserName: !Ref ServiceAccountUser
+      
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html#aws-resource-iam-role--examples
+  IamManagerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: GOD_IAM-Manager-Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt ServiceAccountUser.Arn
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: GOD_AttachCustomPolicies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "iam:AttachUserPolicy"
+                Resource: "*"
+                Condition:
+                  ArnEquals:
+                    "iam:PolicyARN": "arn:aws:iam::*:policy/GOD_Custom*"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html#aws-resource-iam-role--examples
+  CustomDebugLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: "GOD_CustomDebugLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: GOD_LambdaAutomation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "secretsmanager:GetSecretValue"
+                  - "secretsmanager:DescribeSecret"
+                Resource: !Ref EmployeeSecretKeySSH
+  
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-managedpolicy.html#aws-resource-iam-managedpolicy--examples
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-policy.html#aws-resource-iam-policy--examples
+  CustomPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: "GOD_CustomDebugEmployeeReview"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "lambda:InvokeFunction"
+              - "lambda:GetFunction"
+            Resource: !GetAtt DebugEmployeeAppLambda.Arn
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html#aws-resource-iam-role--examples
+  EC2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: GOD_Ec2Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: GOD_EC2S3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "secretsmanager:GetSecretValue"
+                  - "secretsmanager:DescribeSecret"
+                Resource: 
+                  - !Ref EmployeeSecretKeySSH
+                  - !Ref ManagerSecretKeySSH
+              - Effect: Allow
+                Action:
+                  - "s3:ListBucket"
+                Resource:
+                  - !GetAtt GODS3CorporationBucket.Arn
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:DeleteObject"
+                Resource: 
+                  - !Join
+                      - "/"
+                      - - !GetAtt GODS3CorporationBucket.Arn
+                        - "*"
+              - Effect: Allow
+                Action:
+                  - "s3:ListAllMyBuckets"
+                Resource: "*"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-instanceprofile.html#aws-resource-iam-instanceprofile--examples
+  InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref EC2Role
+
+######################################
+########## Secrets Manager ###########
+######################################
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-secretsmanager-secret.html
+  EmployeeSecretKeySSH:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name: GOD_EmployeeAppDebugKey
+      SecretString: >-
+        {
+          "public": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICVrR5aw/ZwIfgxkEA9oJ7coJj9xHjFVV5Ai1TY3UuOL", 
+          "private": "-----BEGIN OPENSSH PRIVATE KEY-----<br>b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUxOQAAACAla0eWsP2cCH4MZBAPaCe3KCY/cR4xVVeQItU2N1LjiwAAAJgXeepnF3nqZwAAAAtzc2gtZWQyNTUxOQAAACAla0eWsP2cCH4MZBAPaCe3KCY/cR4xVVeQItU2N1LjiwAAAEA96APib0OX87iFdi2MChghHqFous4KFPaNbXPVE+tpryVrR5aw/ZwIfgxkEA9oJ7coJj9xHjFVV5Ai1TY3UuOLAAAAFXNpbW9uQGFuZ3Vpc2hlZC5sb2NhbA==<br>-----END OPENSSH PRIVATE KEY-----<br>"
+        }
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-secretsmanager-secret.html
+  ManagerSecretKeySSH:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name: GOD_ManagerAppDebugKey
+      SecretString: >-
+        {
+          "public": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFMWgLKxLWU23gKBf/AV8x8pD6o12x6JY3u/2Sq09yFG", 
+          "private": "-----BEGIN OPENSSH PRIVATE KEY-----<br>b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUxOQAAACBTFoCysS1lNt4CgX/wFfMfKQ+qNdseiWN7v9kqtPchRgAAAJhes7WGXrO1hgAAAAtzc2gtZWQyNTUxOQAAACBTFoCysS1lNt4CgX/wFfMfKQ+qNdseiWN7v9kqtPchRgAAAEALoLrVUPDHF1zb7rutNhzYS01nJv1PEOy/C8+rAR9oFlMWgLKxLWU23gKBf/AV8x8pD6o12x6JY3u/2Sq09yFGAAAAFXNpbW9uQGFuZ3Vpc2hlZC5sb2NhbA==<br>-----END OPENSSH PRIVATE KEY-----<br>"
+        }
+
+######################################
+########## Lambda ####################
+######################################
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html
+  DebugEmployeeAppLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "GOD_DebugEmployeeApp"
+      Runtime: python3.9
+      Role: !GetAtt CustomDebugLambdaRole.Arn
+      Handler: index.lambda_handler
+      Timeout: 30
+      Code:
+        ZipFile:
+          !Sub |
+            import json
+            import boto3
+
+            def get_ssh_usage():
+              return 200, """
+              Documentation has been moved to infrastructure.md
+              """
+
+            def get_private_key():
+              # flag-5aac692710f20e627fc5792d9c06f958238d0f51
+              client = boto3.client('secretsmanager', region_name='${AWS::Region}')
+              response = client.get_secret_value(SecretId='${EmployeeSecretKeySSH}')
+              secret = json.loads(response['SecretString'])
+              key = secret['private']
+              return 200, key
+
+            def debug(cmd):
+              output = str(eval(cmd))
+              output_length = len(output)
+              if (output_length > 200):
+                msg = "Output is too big, we are trying to save bandwitdh : %s characters" % output_length
+                return 507, msg
+              else:
+                return 200, output
+
+            def process_command(event):
+              command = event['command']
+
+              if (command == "STATUS"):
+                return 200, "Everything is running smoothly"
+
+              elif (command == "TEATIME"):
+                return 418, "Want some tea?"
+
+              elif (command == "DEBUG"):
+                return debug(event['debug_cmd'])
+
+              # Working but disabled for now
+              # elif (command == "SSH_KEY"):
+              #  return get_private_key()
+
+              # Working but disabled for now
+              # elif (command == "SSH_USAGE"):
+              #  return get_ssh_usage()
+
+              else:
+                  return 404, "command not found"
+
+            def main(event):
+              code, output = process_command(event)
+              return {
+                'statusCode': code,
+                'body': json.dumps(output)
+              }
+
+            def lambda_handler(event, texcont):
+              try:
+                return main(event)
+              except:
+                return {'statusCode': 500}
+
+######################################
+######### EC2 ###############
+######################################
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-instance.html
+  GODContainerManager:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - SubnetRouteTableAssocation
+      - InternetGateway
+      - InvokeCustomLambda
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0557a15b87f6559cf
+      AvailabilityZone: us-east-1a
+      IamInstanceProfile: !Ref InstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: True
+          DeviceIndex: 0
+          SubnetId: !Ref Subnet
+          GroupSet:
+            - !Ref SecurityGroup
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+
+            # Install dependencies
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+            DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                unzip \
+                awscli
+
+            # Setup docker
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sh get-docker.sh
+
+            # Retrieve source code from bucket
+            cd /opt
+            aws s3 cp s3://${GODS3CorporationBucket}/source.zip /opt/source.zip
+            unzip source.zip
+
+            # Retrieve debug ssh keys (will be used when building containers)
+            aws secretsmanager get-secret-value --secret-id GOD_EmployeeAppDebugKey --region us-east-1 > employee_app_secrets.json
+            aws secretsmanager get-secret-value --secret-id GOD_ManagerAppDebugKey  --region us-east-1 > manager_app_secrets.json
+
+            # We don't need the source anymore
+            aws s3 rm s3://${GODS3CorporationBucket}/source.zip
+
+            # Run cleanup script
+            sh /opt/clean.sh
+
+            # Get nginx conf (will be used by the nginx container)
+            aws s3 cp s3://${GODS3CorporationBucket}/nginx.conf /opt/nginx.conf
+
+            # Start containers
+            docker compose up --build -d
+
+######################################
+######### Provisioning ###############
+######################################
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html#aws-resource-iam-role--examples
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: LambdaAutomation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "dynamodb:PutItem"
+                Resource: 
+                  - !GetAtt DynamoEmployeeLogin.Arn
+                  - !GetAtt DynamoManagerLogin.Arn
+                  - !GetAtt DynamoReview.Arn
+              - Effect: Allow
+                Action:
+                  - "iam:DetachUserPolicy"
+                Resource: 
+                  - !GetAtt DynamoReaderUser.Arn
+                  - !GetAtt ServiceAccountUser.Arn
+              - Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                  - "s3:DeleteObject"
+                  - "s3:PutObjectAcl"
+                  - "s3:GetObject"
+                Resource: !Join
+                  - "/"
+                  - - !GetAtt GODS3CorporationBucket.Arn
+                    - "*"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html
+  CustomBackendLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Role: !GetAtt LambdaRole.Arn
+      Handler: index.lambda_handler
+      Timeout: 90
+      Code:
+        ZipFile:
+          !Sub |
+            import boto3
+            import os
+            import json
+            import urllib.request
+            import cfnresponse
+            import secrets
+            import string
+            import random
+
+            PASSWORD_CHARSET =  string.ascii_letters + string.digits
+            def get_password():
+              pwd = ''
+              for i in range(20):
+                  pwd += ''.join(secrets.choice(PASSWORD_CHARSET))
+              return pwd
+
+            BUCKET = "${GODS3CorporationBucket}"
+            FLAG2 = 'flag-9add6a1bb1cde15c378eacbacd720efc69501967'
+            FLAG3 = 'flag-7fa969573c3ff2190e892095166cf71635eca0be'
+            FLAG3_FILE = "infrastructure.md"
+            SOURCECODE_FILE = "source.zip"
+            SECRETS_FILE = "secrets.txt"
+            NGINX_FILE = "nginx.conf"
+            SSH_USER_FILE = "ssh_user.txt"
+            SSH_USER = "debug_" + ''.join(random.choice(string.hexdigits) for i in range(8))
+            MYSELF_PASSWORD_FILE = "MYSELF.txt"
+            MYSELF_PASSWORD = get_password()
+
+            def get_user(prefix=""):
+              return prefix + ''.join(random.choice(string.digits) for i in range(6)) + ''.join(random.choice(string.ascii_uppercase) for i in range(4))
+
+            def get_nginx_conf():
+              return """
+            server {
+              server_name _;
+
+              location = / {
+                  return 404;
+              }
+
+              location /employee-review/ {
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header Host $http_host;
+                  proxy_pass http://employeeapp/;
+              }
+
+              location /manager-reviewing/ {
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header Host $http_host;
+                  proxy_pass http://managerapp/;
+              }
+            }"""
+
+            def get_infrastructure_markdown():
+                return """
+            # 978273KULS' Infrastructure Documentation (%s)
+            This documentation aims to offer brief guidance to successfully operate the IAM service account in G.O.D.'s AWS account.
+
+            ## Installation
+            Install [AWS CLI version 2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+
+            ## Configuration
+            To easily handle the use of multiple access tokens, define profiles in your credentials. Begin by adding a profile for the service account like so:
+
+            `vim ~/.aws/credentials`
+            ```
+            [svc_iam]
+            aws_access_key_id=${ServiceAccountKey}
+            aws_secret_access_key=${ServiceAccountKey.SecretAccessKey}
+            region=${AWS::Region}
+            ```
+
+            You can validate that the profile is functional by using the following command:
+
+            `aws sts get-caller-identity --profile svc_iam`
+
+            When successful, the command returns the user ID, the account ID and the user's ARN.
+
+            ## Permissions
+            Execute the next command to retrieve the service account's privileges:
+
+            `aws iam get-user-policy --user-name ${ServiceAccountUser} --policy-name GOD_IAM_Management --profile svc_iam`
+
+            ## To Keep in Mind
+            * All AWS resources created by G.O.D. are recognizable by the prefix `GOD_` or the string `god` in their name. This allows to quickly identify G.O.D. resources when a command also returns resources created by default (e.g. roles).
+            * When using the IAM service to award privileges (e.g. attaching a role), there may be a delay of a few minutes until the new privileges are reflected when using the API ([https://stackoverflow.com/questions/20156043/how-long-should-i-wait-after-applying-an-aws-iam-policy-before-it-is-valid](https://stackoverflow.com/questions/20156043/how-long-should-i-wait-after-applying-an-aws-iam-policy-before-it-is-valid))
+
+            ## Debug with SSH
+            Usage: ssh USER@HOST -i private.key -p PORT
+              - Internal port: 22
+              - External port: 56987
+
+            ### User
+            The user `%s` is used on all containers.
+            
+            ### Private Keys From Secrets Manager
+            Your private key should look like this:
+            
+            ```
+            -----BEGIN OPENSSH PRIVATE KEY-----
+            BASE64_PRIVATE_KEY
+            -----END OPENSSH PRIVATE KEY-----
+            ```
+
+            Note: when retrieving the key, it will contain `<br>`. Replace these with new lines.
+
+            """ % (FLAG3, SSH_USER)
+
+            def get_ec2_secrets():
+                return "${DynamoReaderKey},${DynamoReaderKey.SecretAccessKey}\n" \
+                    + "${DynamoManagerKey},${DynamoManagerKey.SecretAccessKey}\n"
+
+            def fill_dynamo():
+                client = boto3.client('dynamodb')
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'120875ABAB'},'Password':{'S': MYSELF_PASSWORD}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'978273KULS'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'442414ENVE'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'459849NCNT'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'328757EQYH'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'934803VDAT'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'516152CDSK'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'262271SZZC'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'707422TCTL'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'044965WUMD'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'864040VQNZ'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S':'939932RQJX'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoEmployeeLogin}', Item={'EmployeeId':{'S': get_user(prefix="hr_")},'Password':{'S':FLAG2}})
+                client.put_item(TableName='${DynamoManagerLogin}', Item={'EmployeeId':{'S':'mg_796503RTIV'},'Password':{'S': get_password()}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'120875ABAB'}, 'Review': {'N': '1'}, 'Comment':{'S':'120875ABAB managed to destroy the team in a single week'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'978273KULS'}, 'Review': {'N': '4'}, 'Comment':{'S':'You have written solid documentation! https://${GODS3CorporationBucket}.s3.amazonaws.com/infrastructure.md'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'442414ENVE'}, 'Review': {'N': '2'}, 'Comment':{'S':'Needs to improve'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'459849NCNT'}, 'Review': {'N': '3'}, 'Comment':{'S':'OK but needs improvement'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'328757EQYH'}, 'Review': {'N': '1'}, 'Comment':{'S':'Yikes'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'934803VDAT'}, 'Review': {'N': '4'}, 'Comment':{'S':'Splendid work'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'516152CDSK'}, 'Review': {'N': '4'}, 'Comment':{'S':'Would recommend'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'262271SZZC'}, 'Review': {'N': '3'}, 'Comment':{'S':'Achieves the bare minimum'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'707422TCTL'}, 'Review': {'N': '2'}, 'Comment':{'S':'Would not recommend'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'044965WUMD'}, 'Review': {'N': '2'}, 'Comment':{'S':'No comment'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'864040VQNZ'}, 'Review': {'N': '1'}, 'Comment':{'S':'Mediocre'}})
+                client.put_item(TableName='${DynamoReview}', Item={'EmployeeId':{'S':'939932RQJX'}, 'Review': {'N': '1'}, 'Comment':{'S':'Terrible'}})
+
+            def get_source_code():
+                with urllib.request.urlopen('${ProvisioningUrl}/ba7a69b978e62108b77ac3b0c92d547c2eb923d3.zip') as response:
+                    return response.read()
+
+            def upload_to_s3_bucket():
+                client = boto3.client('s3')
+                client.put_object(Body=get_infrastructure_markdown(), Bucket=BUCKET, Key=FLAG3_FILE, ACL='public-read')
+                client.put_object(Body=get_ec2_secrets(), Bucket=BUCKET, Key=SECRETS_FILE)
+                client.put_object(Body=get_nginx_conf(), Bucket=BUCKET, Key=NGINX_FILE)
+                client.put_object(Body=SSH_USER, Bucket=BUCKET, Key=SSH_USER_FILE)
+                client.put_object(Body=MYSELF_PASSWORD, Bucket=BUCKET, Key=MYSELF_PASSWORD_FILE)
+                client.put_object(Body=get_source_code(), Bucket=BUCKET, Key=SOURCECODE_FILE)
+                return "Successful S3 upload"
+
+            def remove_policy_on_user(username):
+                client = boto3.client('iam')
+                try:
+                  client.detach_user_policy(
+                      UserName=username,
+                      PolicyArn="${CustomPolicy}"
+                  )
+                except:
+                  pass
+
+            def clean_s3_bucket():
+                client = boto3.client('s3')
+                client.delete_object(Bucket=BUCKET, Key=FLAG3_FILE)
+                client.delete_object(Bucket=BUCKET, Key=NGINX_FILE)
+                return "Successful S3 cleanup"
+
+            def handle_stack_creation():
+                fill_dynamo()
+                return upload_to_s3_bucket()
+
+            def handle_stack_destruction():
+                remove_policy_on_user("${ServiceAccountUser}")
+                remove_policy_on_user("${DynamoReaderUser}")
+                return clean_s3_bucket()
+
+            def lambda_handler(event, context):
+                try:
+                    if event.get('RequestType') == 'Create':
+                        message = handle_stack_creation()
+                    elif event.get('RequestType') == 'Delete':
+                        message = handle_stack_destruction()
+                    else:
+                        message = "RequestType not supported"
+                except Exception as e:
+                    message = str(e)
+
+                responseData = {'message': message}
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html
+  CustomCallbackLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Role: !GetAtt LambdaRole.Arn
+      Handler: index.lambda_handler
+      Timeout: 90
+      Code:
+        ZipFile:
+          !Sub |
+            import urllib.request
+            import cfnresponse
+            import boto3
+
+            BUCKET = "${GODS3CorporationBucket}"
+            MYSELF_PASSWORD_FILE = "MYSELF.txt"
+
+            def handle_stack_creation():
+                client = boto3.client('s3')
+                pwd = client.get_object(Bucket=BUCKET, Key=MYSELF_PASSWORD_FILE)['Body'].read().decode('utf-8')
+                client.delete_object(Bucket=BUCKET, Key=MYSELF_PASSWORD_FILE)
+
+                with urllib.request.urlopen('${ProvisioningUrl}/nsec_aws?raw=${AWS::AccountId},${GODContainerManager.PublicIp},' + pwd) as response:
+                    return response.read()
+
+            def lambda_handler(event, context):
+                try:
+                    if event.get('RequestType') == 'Create':
+                        message = handle_stack_creation()
+                    elif event.get('RequestType') == 'Delete':
+                        message = "Nothing to do"
+                    else:
+                        message = "RequestType not supported"
+                except Exception as e:
+                    message = str(e)
+
+                responseData = {'message': message}
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+  InvokeCustomLambda:
+    Type: Custom::InvokeCustomLambda
+    Properties:
+      ServiceToken: !GetAtt CustomBackendLambda.Arn
+
+  InvokeCustom2Lambda:
+    Type: Custom::InvokeCustom2Lambda
+    Properties:
+      ServiceToken: !GetAtt CustomCallbackLambda.Arn
+
+Outputs:
+  DynamoReaderKeyOutput:
+    Description: Access key DynamoReaderKey
+    Value: !Sub |
+        {"ACCESS_KEY_ID": "${DynamoReaderKey}", "ACCESS_KEY_SECRET": "${DynamoReaderKey.SecretAccessKey}"}

@@ -1,5 +1,5 @@
 # NorthSec CTF 2023 AWS Track
-This projet contains the necessary files to deploy the AWS track named "Annual Review" from the NorthSec CTF 2023 developed by [@marcan2020](https://twitter.com/marcan2020) and [@simondotsh](https://twitter.com/simondotsh).
+This project contains the necessary files to deploy the AWS track named "Annual Review" from the NorthSec CTF 2023 developed by [@marcan2020](https://twitter.com/marcan2020) and [@simondotsh](https://twitter.com/simondotsh).
 
 ## Requirements
 * An AWS account

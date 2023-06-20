@@ -7,7 +7,7 @@ This project contains the necessary files to deploy the AWS track named "Annual 
 
 ## Deploying
 1. Host the [track source code](provisioning/ba7a69b978e62108b77ac3b0c92d547c2eb923d3.zip) at the root of a web server. Ensure you can read access logs.
-2. Using the AWS CloudFormation service, create a stack using the [template](provisioning/template.yaml).
+2. Using the AWS CloudFormation service in `us-east-1`, create a stack using the [template](provisioning/template.yaml).
 3. When requested, fill the `ProvisioningUrl` parameter with the URL of your web server, e.g. `http://44.209.164.138`.
 4. Once created, wait 5 to 10 minutes for the resources to be available.
 5. In your web server's access logs, you should see the following:

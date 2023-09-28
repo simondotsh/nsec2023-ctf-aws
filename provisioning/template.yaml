@@ -260,7 +260,7 @@ Resources:
                 Action:
                   - "iam:ListRoles"
                   - "iam:ListPolicies"
-                  - "iam:ListPolicyVersion"
+                  - "iam:ListPolicyVersions"
                   - "iam:ListRolePolicies"
                   - "iam:ListAttachedRolePolicies"
                   - "iam:ListAttachedUserPolicies"
@@ -514,7 +514,7 @@ Resources:
       - InvokeCustomLambda
     Properties:
       InstanceType: t2.micro
-      ImageId: ami-0557a15b87f6559cf
+      ImageId: ami-053b0d53c279acc90
       AvailabilityZone: us-east-1a
       IamInstanceProfile: !Ref InstanceProfile
       NetworkInterfaces:
@@ -863,9 +863,3 @@ Resources:
     Type: Custom::InvokeCustom2Lambda
     Properties:
       ServiceToken: !GetAtt CustomCallbackLambda.Arn
-
-Outputs:
-  DynamoReaderKeyOutput:
-    Description: Access key DynamoReaderKey
-    Value: !Sub |
-        {"ACCESS_KEY_ID": "${DynamoReaderKey}", "ACCESS_KEY_SECRET": "${DynamoReaderKey.SecretAccessKey}"}
